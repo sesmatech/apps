@@ -1,4 +1,4 @@
-name: Add qrcode.min.js from npm and copy to libs
+name: Add qrcode.min.js (npm -> minify -> libs)
 
 on:
   workflow_dispatch:
@@ -25,27 +25,57 @@ jobs:
           npm init -y
           npm install qrcode@1.5.3 --no-audit --no-fund
 
-      - name: Find and copy minified qrcode file
+      - name: Find candidate JS and produce libs/qrcode.min.js
         run: |
+          set -e
           mkdir -p libs
-          # try common locations, otherwise search for any .min.js inside the package
+          # try known prebuilt spots first
+          CAND=""
           if [ -f node_modules/qrcode/build/qrcode.min.js ]; then
-            cp node_modules/qrcode/build/qrcode.min.js libs/qrcode.min.js
+            CAND=node_modules/qrcode/build/qrcode.min.js
           elif [ -f node_modules/qrcode/build/qrcode.umd.min.js ]; then
-            cp node_modules/qrcode/build/qrcode.umd.min.js libs/qrcode.min.js
+            CAND=node_modules/qrcode/build/qrcode.umd.min.js
           elif [ -f node_modules/qrcode/dist/qrcode.min.js ]; then
-            cp node_modules/qrcode/dist/qrcode.min.js libs/qrcode.min.js
-          else
-            FILE=$(find node_modules/qrcode -type f -name '*.min.js' | head -n 1 || true)
-            if [ -n "$FILE" ]; then
-              cp "$FILE" libs/qrcode.min.js
-            else
-              echo "ERROR: Couldn't find any *.min.js inside node_modules/qrcode" >&2
-              ls -la node_modules/qrcode || true
-              exit 2
-            fi
+            CAND=node_modules/qrcode/dist/qrcode.min.js
+          elif [ -f node_modules/qrcode/browser/qrcode.js ]; then
+            CAND=node_modules/qrcode/browser/qrcode.js
+          elif [ -f node_modules/qrcode/browser.js ]; then
+            CAND=node_modules/qrcode/browser.js
+          elif [ -f node_modules/qrcode/lib/browser.js ]; then
+            CAND=node_modules/qrcode/lib/browser.js
           fi
-          echo "Copied $(stat -c '%n %s' libs/qrcode.min.js || true)"
+
+          # if still empty, search for any reasonable .js file inside package
+          if [ -z "$CAND" ]; then
+            CAND=$(find node_modules/qrcode -type f -name '*.js' | egrep -i 'build|dist|browser|umd|index' | head -n 1 || true)
+          fi
+
+          # final fallback - pick the first .js file
+          if [ -z "$CAND" ]; then
+            CAND=$(find node_modules/qrcode -type f -name '*.js' | head -n 1 || true)
+          fi
+
+          if [ -z "$CAND" ]; then
+            echo "ERROR: Couldn't find any .js file inside node_modules/qrcode" >&2
+            ls -la node_modules/qrcode || true
+            exit 2
+          fi
+
+          echo "Selected candidate: $CAND"
+          # try to minify with terser (install on the fly with npx)
+          if npx --yes terser --version >/dev/null 2>&1; then
+            echo "Minifying with terser..."
+            npx --yes terser "$CAND" -c -m -o libs/qrcode.min.js || true
+          fi
+
+          # if minified file empty or not created, copy original as fallback
+          if [ ! -s libs/qrcode.min.js ]; then
+            echo "Minify failed or no output, copying original as libs/qrcode.min.js"
+            cp "$CAND" libs/qrcode.min.js
+          fi
+
+          echo "Resulting file:"
+          ls -lh libs/qrcode.min.js || true
 
       - name: Commit and push if changed
         env:
@@ -59,5 +89,5 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "Add qrcode.min.js (fetched via npm and copied to libs)"
+          git commit -m "Add qrcode.min.js (fetched via npm and minified/copy to libs)"
           git push origin HEAD:${{ github.ref_name }}
