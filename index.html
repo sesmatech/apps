@@ -10628,14 +10628,25 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
                     </div>
                 </div>
 
-                <div id="scanResultContainer" class="hidden bg-gray-900/90 p-4 rounded-xl border border-[#808000]/40 text-right space-y-2">
-                    <span class="text-xs font-bold text-[#808000] flex items-center gap-1">
-                        <i class="fa-solid fa-circle-check"></i> تم العثور على النتيجة:
-                    </span>
-                    <p id="scanResultText" class="text-sm font-mono break-all text-gray-200 bg-black p-3 rounded-lg border border-gray-800"></p>
-                    <div class="flex justify-end gap-2 pt-1">
-                        <button onclick="copyScanResult()" class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-xs font-bold rounded-lg text-gray-300">نسخ</button>
-                        <a id="scanResultOpenBtn" href="#" target="_blank" class="px-3 py-1.5 bg-[#990000] hover:bg-[#B30000] text-xs font-bold rounded-lg text-white hidden">فتح الرابط</a>
+                <div id="scanResultContainer" class="hidden bg-gray-900/90 rounded-xl border border-[#808000]/40 text-right overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-black/40">
+                        <span id="scanResultTypeBadge" class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#808000]/10 border border-[#808000]/40 text-[#808000] text-xs font-bold">
+                            <i class="fa-solid fa-circle-check"></i><span>تم فك تشفير الرمز</span>
+                        </span>
+                        <span class="text-[10px] text-gray-500 font-bold">QR CODE PRO</span>
+                    </div>
+
+                    <div class="p-4 space-y-4">
+                        <div id="scanResultStructured" class="space-y-2"></div>
+
+                        <div id="scanResultActions" class="flex flex-wrap justify-end gap-2"></div>
+
+                        <div class="border-t border-gray-800 pt-3">
+                            <button onclick="toggleRawScanData()" class="text-[10px] text-gray-400 hover:text-white flex items-center gap-1.5 transition-all">
+                                <i class="fa-solid fa-code"></i><span>عرض البيانات الخام (Raw Data)</span>
+                            </button>
+                            <p id="scanResultText" class="hidden text-xs font-mono break-all text-gray-300 bg-black p-3 rounded-lg border border-gray-800 mt-2 select-all"></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -10957,7 +10968,6 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         }
 
         function copyRawData() { copyTextToClipboard(document.getElementById('rawDataPreview').innerText); }
-        function copyScanResult() { copyTextToClipboard(document.getElementById('scanResultText').innerText); }
 
         function copyQRToClipboard() {
             const canvas = document.querySelector('#qrCodeContainer canvas');
@@ -11128,18 +11138,262 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
             reader.readAsDataURL(file);
         }
 
-        function showScanResult(resultText) {
-            document.getElementById('scanResultContainer').classList.remove('hidden');
-            document.getElementById('scanResultText').innerText = resultText;
+        let lastScannedRaw = '';
 
-            const openBtn = document.getElementById('scanResultOpenBtn');
-            if (resultText.startsWith('http://') || resultText.startsWith('https://')) {
-                openBtn.href = resultText;
-                openBtn.classList.remove('hidden');
-            } else {
-                openBtn.classList.add('hidden');
-            }
+        function showScanResult(resultText) {
+            lastScannedRaw = resultText;
+            document.getElementById('scanResultContainer').classList.remove('hidden');
+
+            const rawEl = document.getElementById('scanResultText');
+            rawEl.innerText = resultText;
+            rawEl.classList.add('hidden');
+
+            renderScanResult(resultText);
             showToast('تم فك تشفير الرمز بنجاح!', 'success');
+        }
+
+        function toggleRawScanData() {
+            document.getElementById('scanResultText').classList.toggle('hidden');
+        }
+
+        // ===== أدوات مساعدة لتنسيق وعرض بيانات المسح بشكل منظم =====
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, (s) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[s]));
+        }
+
+        function unescapeQRValue(str) {
+            return String(str)
+                .replace(/\\,/g, ',')
+                .replace(/\\;/g, ';')
+                .replace(/\\:/g, ':')
+                .replace(/\\\\/g, '\\');
+        }
+
+        // تقسيم يحترم الفواصل المنقوطة "الهاربة" (Escaped) في صيغ VCARD/WIFI
+        function splitUnescaped(text, sep) {
+            const parts = [];
+            let current = '';
+            for (let i = 0; i < text.length; i++) {
+                if (text[i] === '\\' && i + 1 < text.length) {
+                    current += text[i] + text[i + 1];
+                    i++;
+                } else if (text[i] === sep) {
+                    parts.push(current);
+                    current = '';
+                } else {
+                    current += text[i];
+                }
+            }
+            parts.push(current);
+            return parts;
+        }
+
+        function parseVCard(text) {
+            const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const result = { fn: '', org: '', title: '', tel: [], email: [], url: '', adr: '' };
+            lines.forEach(line => {
+                const m = line.match(/^([A-Za-z\-]+)(;[^:]*)?:(.*)$/);
+                if (!m) return;
+                const key = m[1].toUpperCase();
+                const value = unescapeQRValue(m[3]);
+                if (key === 'FN') result.fn = value;
+                else if (key === 'ORG') result.org = value;
+                else if (key === 'TITLE') result.title = value;
+                else if (key === 'TEL') result.tel.push(value);
+                else if (key === 'EMAIL') result.email.push(value);
+                else if (key === 'URL') result.url = value;
+                else if (key === 'ADR') {
+                    const parts = splitUnescaped(value, ';').map(p => p.trim()).filter(Boolean);
+                    result.adr = parts.join('، ');
+                }
+            });
+            return result;
+        }
+
+        function parseWifi(text) {
+            const body = text.replace(/^WIFI:/i, '');
+            const result = { ssid: '', type: '', pass: '', hidden: false };
+            splitUnescaped(body, ';').forEach(p => {
+                const m = p.match(/^([A-Za-z]):([\s\S]*)$/);
+                if (!m) return;
+                const key = m[1].toUpperCase();
+                const value = unescapeQRValue(m[2]);
+                if (key === 'S') result.ssid = value;
+                else if (key === 'T') result.type = value;
+                else if (key === 'P') result.pass = value;
+                else if (key === 'H') result.hidden = /true/i.test(value);
+            });
+            return result;
+        }
+
+        function parseMailto(text) {
+            const withoutScheme = text.replace(/^mailto:/i, '');
+            const qIndex = withoutScheme.indexOf('?');
+            const to = qIndex === -1 ? withoutScheme : withoutScheme.slice(0, qIndex);
+            const query = qIndex === -1 ? '' : withoutScheme.slice(qIndex + 1);
+            let subject = '', body = '';
+            try {
+                const params = new URLSearchParams(query);
+                subject = params.get('subject') || '';
+                body = params.get('body') || '';
+            } catch (e) { /* تجاهل */ }
+            return { to, subject, body };
+        }
+
+        function parseTelOrSms(text) {
+            if (/^tel:/i.test(text)) {
+                return { kind: 'tel', number: text.replace(/^tel:/i, ''), message: '' };
+            }
+            if (/^smsto:/i.test(text)) {
+                const rest = text.replace(/^smsto:/i, '');
+                const idx = rest.indexOf(':');
+                if (idx === -1) return { kind: 'sms', number: rest, message: '' };
+                return { kind: 'sms', number: rest.slice(0, idx), message: rest.slice(idx + 1) };
+            }
+            return null;
+        }
+
+        function parseGeo(text) {
+            const m = text.match(/^geo:([\-0-9.]+),([\-0-9.]+)/i);
+            return m ? { lat: m[1], lon: m[2] } : null;
+        }
+
+        function buildFieldRow(iconClass, label, value, opts = {}) {
+            if (!value) return '';
+            const safeVal = escapeHtml(value);
+            const copyBtn = opts.copy === false ? '' : `
+                <button onclick="copyTextToClipboard(\`${String(value).replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`)" class="text-gray-500 hover:text-white text-xs px-1 shrink-0" title="نسخ">
+                    <i class="fa-regular fa-copy"></i>
+                </button>`;
+            return `
+            <div class="flex items-start justify-between gap-2 bg-black/50 border border-gray-800 rounded-lg px-3 py-2">
+                <div class="flex items-start gap-2.5 min-w-0">
+                    <i class="fa-solid ${iconClass} text-[#808000] mt-0.5 w-4 text-center shrink-0"></i>
+                    <div class="min-w-0">
+                        <p class="text-[10px] text-gray-500">${label}</p>
+                        <p class="text-xs text-gray-200 break-all">${safeVal}</p>
+                    </div>
+                </div>
+                ${copyBtn}
+            </div>`;
+        }
+
+        function buildLinkAction(iconClass, label, href, extraAttrs = '') {
+            return `<a href="${escapeHtml(href)}" ${extraAttrs} class="px-3 py-1.5 bg-[#990000] hover:bg-[#B30000] text-xs font-bold rounded-lg text-white flex items-center gap-1.5 transition-all">
+                <i class="fa-solid ${iconClass}"></i><span>${label}</span>
+            </a>`;
+        }
+
+        function buildButtonAction(iconClass, label, onclickFn) {
+            return `<button onclick="${onclickFn}" class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 border border-gray-700 text-xs font-bold rounded-lg text-gray-200 flex items-center gap-1.5 transition-all">
+                <i class="fa-solid ${iconClass}"></i><span>${label}</span>
+            </button>`;
+        }
+
+        function downloadVCard() {
+            if (!lastScannedRaw) return;
+            const blob = new Blob([lastScannedRaw], { type: 'text/vcard;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Contact_${Date.now()}.vcf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            showToast('تم تحميل جهة الاتصال (VCF) بنجاح', 'success');
+        }
+
+        function renderScanResult(rawText) {
+            const typeBadge = document.getElementById('scanResultTypeBadge');
+            const structuredEl = document.getElementById('scanResultStructured');
+            const actionsEl = document.getElementById('scanResultActions');
+
+            let typeLabel = 'نص عام';
+            let typeIcon = 'fa-align-left';
+            let fieldsHtml = '';
+            let actionsHtml = '';
+
+            if (/^BEGIN:VCARD/i.test(rawText)) {
+                typeLabel = 'بطاقة تعريف (جهة اتصال)';
+                typeIcon = 'fa-address-card';
+                const v = parseVCard(rawText);
+                fieldsHtml += buildFieldRow('fa-user', 'الاسم', v.fn);
+                fieldsHtml += buildFieldRow('fa-briefcase', 'المسمى الوظيفي', v.title);
+                fieldsHtml += buildFieldRow('fa-building', 'الشركة', v.org);
+                v.tel.forEach(t => { fieldsHtml += buildFieldRow('fa-phone', 'رقم الهاتف', t); });
+                v.email.forEach(e => { fieldsHtml += buildFieldRow('fa-envelope', 'البريد الإلكتروني', e); });
+                fieldsHtml += buildFieldRow('fa-globe', 'الموقع الإلكتروني', v.url);
+                fieldsHtml += buildFieldRow('fa-location-dot', 'العنوان', v.adr);
+
+                if (v.tel[0]) actionsHtml += buildLinkAction('fa-phone', 'اتصال', `tel:${v.tel[0]}`);
+                if (v.email[0]) actionsHtml += buildLinkAction('fa-envelope', 'مراسلة', `mailto:${v.email[0]}`);
+                actionsHtml += buildButtonAction('fa-download', 'حفظ جهة الاتصال', 'downloadVCard()');
+
+            } else if (/^WIFI:/i.test(rawText)) {
+                typeLabel = 'إعدادات شبكة واي فاي';
+                typeIcon = 'fa-wifi';
+                const w = parseWifi(rawText);
+                fieldsHtml += buildFieldRow('fa-wifi', 'اسم الشبكة (SSID)', w.ssid);
+                fieldsHtml += buildFieldRow('fa-lock', 'كلمة المرور', w.pass || 'بدون كلمة مرور', { copy: !!w.pass });
+                fieldsHtml += buildFieldRow('fa-shield-halved', 'نوع التشفير', w.type || 'غير محدد', { copy: false });
+                if (w.pass) actionsHtml += buildButtonAction('fa-key', 'نسخ كلمة المرور', `copyTextToClipboard('${w.pass.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`);
+
+            } else if (/^https?:\/\//i.test(rawText)) {
+                typeLabel = 'رابط ويب (URL)';
+                typeIcon = 'fa-link';
+                let domain = rawText;
+                try { domain = new URL(rawText).hostname; } catch (e) { /* تجاهل */ }
+                fieldsHtml += buildFieldRow('fa-globe', 'النطاق', domain, { copy: false });
+                fieldsHtml += buildFieldRow('fa-link', 'الرابط الكامل', rawText);
+                actionsHtml += buildLinkAction('fa-up-right-from-square', 'فتح الرابط', rawText, 'target="_blank" rel="noopener noreferrer"');
+
+            } else if (/^mailto:/i.test(rawText)) {
+                typeLabel = 'بريد إلكتروني';
+                typeIcon = 'fa-envelope';
+                const m = parseMailto(rawText);
+                fieldsHtml += buildFieldRow('fa-at', 'المستلم', m.to);
+                fieldsHtml += buildFieldRow('fa-heading', 'الموضوع', m.subject);
+                fieldsHtml += buildFieldRow('fa-align-left', 'نص الرسالة', m.body);
+                actionsHtml += buildLinkAction('fa-envelope', 'إرسال بريد', rawText);
+
+            } else if (/^tel:/i.test(rawText) || /^smsto:/i.test(rawText)) {
+                const p = parseTelOrSms(rawText);
+                if (p.kind === 'tel') {
+                    typeLabel = 'رقم هاتف';
+                    typeIcon = 'fa-phone';
+                    fieldsHtml += buildFieldRow('fa-phone', 'رقم الهاتف', p.number);
+                    actionsHtml += buildLinkAction('fa-phone', 'اتصال الآن', `tel:${p.number}`);
+                } else {
+                    typeLabel = 'رسالة SMS';
+                    typeIcon = 'fa-comment-sms';
+                    fieldsHtml += buildFieldRow('fa-phone', 'الرقم', p.number);
+                    fieldsHtml += buildFieldRow('fa-comment', 'نص الرسالة', p.message);
+                    actionsHtml += buildLinkAction('fa-comment-sms', 'إرسال SMS', rawText);
+                }
+
+            } else if (/^geo:/i.test(rawText)) {
+                typeLabel = 'موقع جغرافي';
+                typeIcon = 'fa-location-dot';
+                const g = parseGeo(rawText);
+                if (g) {
+                    fieldsHtml += buildFieldRow('fa-location-dot', 'الإحداثيات', `${g.lat}, ${g.lon}`);
+                    actionsHtml += buildLinkAction('fa-map', 'فتح في خرائط جوجل', `https://www.google.com/maps?q=${g.lat},${g.lon}`, 'target="_blank" rel="noopener noreferrer"');
+                } else {
+                    fieldsHtml += buildFieldRow('fa-location-dot', 'المحتوى', rawText);
+                }
+
+            } else {
+                fieldsHtml += buildFieldRow('fa-align-left', 'المحتوى', rawText);
+            }
+
+            typeBadge.innerHTML = `<i class="fa-solid ${typeIcon}"></i><span>${typeLabel}</span>`;
+            structuredEl.innerHTML = fieldsHtml || buildFieldRow('fa-align-left', 'المحتوى', rawText);
+            actionsHtml += buildButtonAction('fa-copy', 'نسخ الكل', 'copyTextToClipboard(document.getElementById("scanResultText").innerText)');
+            actionsEl.innerHTML = actionsHtml;
         }
 
         function showToast(message, type = 'info') {
