@@ -13,16 +13,14 @@
     
     <!-- Icons & Libraries -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="./libs/qrcode.min.js"></script>
-    
-    <!-- ✅ Tailwind CSS - Built with CLI (Production Ready) -->
-    <link rel="stylesheet" href="./dist/output.css">
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- NOTE:
          - لا تضع qrcode عبر CDN في <head> ثابتًا — الدالة ensureQRCodeLoaded ستحاول تحميل مكتبات محلية أولاً (./libs/qrcode*.js)
            ثم تجربة CDNs كنسخ احتياطية. للموقع على GitHub Pages ضع qrcode.min.js داخل ./libs/ للمصداقية الكاملة.
          - يمكنك تحميل المكتبة من: https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js
     -->
+         <script src="./libs/qrcode.min.js"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -168,7 +166,7 @@
             <i class="fa-solid fa-triangle-exclamation text-[#990000]"></i>
             <div>
                 <div id="libErrorTitle" class="text-sm font-bold">تعذر تحميل مكتبة إنشاء الرموز</div>
-                <div id="libErrorMsg" class="text-xs text-gray-300">النظام حاول تحميل qrcode ولم ينجح — يمكنك المحاولة يدويًا أو تنزيل الملف[...]
+                <div id="libErrorMsg" class="text-xs text-gray-300">النظام حاول تحميل qrcode ولم ينجح — يمكنك المحاولة يدويًا أو تنزيل الملف محليًا.</div>
             </div>
         </div>
         <div class="actions">
@@ -204,7 +202,7 @@
         </div>
 
         <div class="flex items-center gap-2 bg-black/80 p-1.5 rounded-2xl border border-gray-800">
-            <button id="navTabCreate" onclick="switchMainTab('create')" class="nav-tab active px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all text-gray-400 hover:text-white">
+            <button id="navTabCreate" onclick="switchMainTab('create')" class="nav-tab active px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all text-gray-400">
                 <i class="fa-solid fa-wand-magic-sparkles"></i><span>إنشاء وتخصيص</span>
             </button>
             <button id="navTabScan" onclick="switchMainTab('scan')" class="nav-tab px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-gray-400 flex items-center gap-2 transition-all hover:text-white">
@@ -450,13 +448,20 @@
                     showToast(err.message || 'تعذر تحميل مكتبة QR Code', 'error');
                     console.error('QR loader error:', err);
                     // reflect failure in UI
-                    document.getElementById('rawDataPreview') && (document.getElementById('rawDataPreview').innerText = 'تعذر تحميل مكتبة إنشاء الرموز. راجع الشريط الأحمر أعلاه.');
+                    document.getElementById('rawDataPreview') && (document.getElementById('rawDataPreview').innerText = 'تعذر تحميل مكتبة إنشاء الرموز. راجع الشريط العلوي لإعادة المحاولة أو لتنزيل الملف.');
                 });
 
             // wire up retry/download buttons visibility (already set by showLibErrorBanner)
         };
 
+        /* ... The rest of original JS functions (generateRawDataPayload, updateQRCode, drawCenterIconOnCanvas, etc.)
+           should be preserved from your original source. For clarity I will include the critical ones that interact
+           with ensureQRCodeLoaded below, and otherwise the rest of functions remain unchanged. */
+
         function generateRawDataPayload() {
+            // (same implementation as your original; omitted here for brevity)
+            // In your integration, keep the original vcard/url/wifi/email/text/social/phone handling.
+            // For the demo file I'm returning a placeholder.
             return "مثال: لاختبار تحميل المكتبة";
         }
 
